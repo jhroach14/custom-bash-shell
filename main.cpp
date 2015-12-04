@@ -183,6 +183,10 @@ int main() {
         string command;
         getline(cin, command);
 
+	if(command.compare("exit")==0){
+	    break;
+	}
+
         vector<string> argsList = divideByPipes(command);
         vector<Process> processes = makeProcesses(argsList);
         Job job(command, processes);
@@ -258,13 +262,13 @@ void singleProcess(Job job){
         const char *executable = process.arguments.at(0).c_str();
         char *const *arguments = devolveArgList(process.arguments);
         cout << "child execing program " << executable << '\n';
-        if (execv(executable, arguments) == -1) {
-            cout << "total failure " << strerror(errno) << '\n';
+        if (execvp(executable, arguments) == -1) {
+            cout << "total failure q" << strerror(errno) << '\n';
             exitProgram(strerror(errno));
         }
     } else {
         cout << "parent says hi \n";
-        waitpid(pId, &status, 0);
+        cout<< waitpid(pId, &status, 0)<<"\n";
         cout << "child process returned\n";
     }
 }
@@ -312,7 +316,7 @@ void multiProcess(Job job){
                     exitProgram(strerror(errno));
                 }
 
-                if (execv(executable, arguments) == -1) {
+                if (execvp(executable, arguments) == -1) {
                     cerr << "failure caused by " << strerror(errno) << '\n';
                     exitProgram(strerror(errno));
                 }
@@ -339,7 +343,7 @@ void multiProcess(Job job){
                     exitProgram(strerror(errno));
                 }
 
-                if (execv(executable, arguments) == -1) {
+                if (execvp(executable, arguments) == -1) {
                     cerr << "failure cuased by " << strerror(errno) << "\n";
                 }
             } else {
@@ -371,7 +375,7 @@ void multiProcess(Job job){
                     exitProgram(strerror(errno));
                 }
 
-                if (execv(executable, arguments) == -1) {
+                if (execvp(executable, arguments) == -1) {
                     cerr << "failure cuased by " << strerror(errno) << "\n";
                 }
             } else {
@@ -469,7 +473,7 @@ char *const *devolveArgList(vector<string> list) {
             cout << "found char " << list.at(j).at(i) << " at index " << i << '\n';
             str[i] = list.at(j).at(i);
         }
-        str[list.at(j).size() + 1] = 0;
+        str[list.at(j).size()] = 0;
         cout << "constructed string " << str << '\n';
         baseArray[j] = str;
     }
@@ -479,9 +483,6 @@ char *const *devolveArgList(vector<string> list) {
     cout << "leaving devolve arg method\n";
     return thing;
 }
-
-
-
 
 string trim(string str) {
     size_t end = str.find_last_not_of(" \t");
