@@ -17,7 +17,7 @@ int main(int argc,char* argv[]){
 			}
 		}
 	}
-	cerr<<"std out = "<<STDOUT_FILENOM<<'\n';
+	cerr<<"std out = "<<STDOUT_FILENO<<'\n';
 	cerr<<"Process recived:\n"<<in;
 	if(write(STDOUT_FILENO,in.c_str(),in.size())==-1){
 		perror(strerror(errno));

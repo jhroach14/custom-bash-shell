@@ -176,12 +176,12 @@ int main() {
     cout << "entering program\n";
     pipeNumber = 0;
     int loopFlag = 0;
-    while (loopFlag == 0) {
+    while (loopFlag < 100) {
         signal();
 
         cout << prompt();
         string command;
-        getline(cin, command);
+        getline(cin , command);
 
 	if(command.compare("exit")==0){
 	    break;
@@ -192,6 +192,8 @@ int main() {
         Job job(command, processes);
 
         runJob(job);
+	pipeNumber=0;
+	loopFlag++;
     }
 }
 
@@ -354,6 +356,8 @@ void multiProcess(Job job){
             }
         } else {
             cout << "entering logic for middle processes\n";
+	    int nextPipe[2];
+	    pipe(nextPipe);
             if ((pId = fork()) == -1) {
                 exitProgram(strerror(errno));
             }
@@ -367,19 +371,21 @@ void multiProcess(Job job){
                     cout << "failure cuased by 2" << strerror(errno) << '\n';
                     exitProgram(strerror(errno));
                 }
-                pipeCount++;
-                pipe(pipeFds[pipeCount]);
-                pipeFd = pipeFds[pipeCount];
+                pipeFd= nextPipe;
+		cout<< "pipeFD = " << pipeFd[1]<<'\n';
+		cout<<"stdout = "<<STDOUT_FILENO<<'\n';
+		cout<<"*******\n";
                 if (dup2(pipeFd[1], STDOUT_FILENO) == -1) {
                     cout << "failure cuased by 1" << strerror(errno) << '\n';
                     exitProgram(strerror(errno));
                 }
-
+		cerr<<"stdout = ********"<<STDOUT_FILENO<<'\n';
                 if (execvp(executable, arguments) == -1) {
                     cerr << "failure cuased by " << strerror(errno) << "\n";
                 }
             } else {
                 cout << "parent proccess says hi\n";
+		pipeFd=nextPipe;
                 waitpid(pId, &status, 0);
                 close(pipeFd[1]);
                 cout << "child process returned\n";
