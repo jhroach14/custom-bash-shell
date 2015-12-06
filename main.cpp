@@ -151,6 +151,8 @@ vector<Process> makeProcesses(vector<string>);
 
 void runJob(Job);
 
+int checkForBuiltins(vector<Process>);
+
 string trim(string);
 
 void exitProgram(string);
@@ -160,6 +162,8 @@ char *const *devolveArgList(vector<string>);
 string prompt();
 
 void help();
+
+void exit();
 
 int cd(const char *pathname);
 
@@ -183,12 +187,13 @@ int main() {
         string command;
         getline(cin , command);
 
-	if(command.compare("exit")==0){
-	    break;
-	}
-
         vector<string> argsList = divideByPipes(command);
+	
         vector<Process> processes = makeProcesses(argsList);
+	int cfb = checkForBuiltins(processes);
+        if(cfb==0){
+          continue;
+        }
         Job job(command, processes);
 
         runJob(job);
@@ -247,6 +252,30 @@ void runJob(Job job) {
     } else {
         multiProcess(job);
     }
+}
+
+int checkForBuiltins(vector<Process> input){
+  string executable = input.at(0).arguments.at(0);
+  
+  if(executable.compare("exit")==0){
+    exit();
+  }
+  else if(executable.compare("help")==0){
+    cout<<"help called"<<endl;
+    help();
+    return 0;
+    
+  }
+  else if(executable.compare("cd")==0){
+    cout<<"change directory called"<<endl;
+    int c = cd(input.at(0).arguments.at(1).c_str());
+    if(c<0){
+      return -1;
+    }
+    return 0;
+  }
+  return 1;
+
 }
 
 void singleProcess(Job job){
@@ -507,6 +536,11 @@ void exitProgram(string message) {
     exit(EXIT_FAILURE);
 }
 
+void exit() {
+  cout<<"Programmed successfully closed by user"<<endl;
+  exit(EXIT_SUCCESS);
+
+}
 void help() {
     cout << "GNU bash, version 4.1.2(1)-release (x86_64-redhat-linux-gnu)" << endl;
     cout << "These shell commands are defined internally.  Type `help' to see this list." << endl << endl;
