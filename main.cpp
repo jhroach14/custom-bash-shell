@@ -176,18 +176,24 @@ int main() {
     cout << "entering program\n";
     pipeNumber = 0;
     int loopFlag = 0;
-    while (loopFlag == 0) {
+    while (loopFlag < 100) {
         signal();
 
         cout << prompt();
         string command;
-        getline(cin, command);
+        getline(cin , command);
+
+	if(command.compare("exit")==0){
+	    break;
+	}
 
         vector<string> argsList = divideByPipes(command);
         vector<Process> processes = makeProcesses(argsList);
         Job job(command, processes);
 
         runJob(job);
+	pipeNumber=0;
+	loopFlag++;
     }
 }
 
@@ -258,13 +264,13 @@ void singleProcess(Job job){
         const char *executable = process.arguments.at(0).c_str();
         char *const *arguments = devolveArgList(process.arguments);
         cout << "child execing program " << executable << '\n';
-        if (execv(executable, arguments) == -1) {
-            cout << "total failure " << strerror(errno) << '\n';
+        if (execvp(executable, arguments) == -1) {
+            cout << "total failure q" << strerror(errno) << '\n';
             exitProgram(strerror(errno));
         }
     } else {
         cout << "parent says hi \n";
-        waitpid(pId, &status, 0);
+        cout<< waitpid(pId, &status, 0)<<"\n";
         cout << "child process returned\n";
     }
 }
@@ -312,7 +318,7 @@ void multiProcess(Job job){
                     exitProgram(strerror(errno));
                 }
 
-                if (execv(executable, arguments) == -1) {
+                if (execvp(executable, arguments) == -1) {
                     cerr << "failure caused by " << strerror(errno) << '\n';
                     exitProgram(strerror(errno));
                 }
@@ -339,7 +345,7 @@ void multiProcess(Job job){
                     exitProgram(strerror(errno));
                 }
 
-                if (execv(executable, arguments) == -1) {
+                if (execvp(executable, arguments) == -1) {
                     cerr << "failure cuased by " << strerror(errno) << "\n";
                 }
             } else {
@@ -350,6 +356,8 @@ void multiProcess(Job job){
             }
         } else {
             cout << "entering logic for middle processes\n";
+	    int nextPipe[2];
+	    pipe(nextPipe);
             if ((pId = fork()) == -1) {
                 exitProgram(strerror(errno));
             }
@@ -363,19 +371,21 @@ void multiProcess(Job job){
                     cout << "failure cuased by 2" << strerror(errno) << '\n';
                     exitProgram(strerror(errno));
                 }
-                pipeCount++;
-                pipe(pipeFds[pipeCount]);
-                pipeFd = pipeFds[pipeCount];
+                pipeFd= nextPipe;
+		cout<< "pipeFD = " << pipeFd[1]<<'\n';
+		cout<<"stdout = "<<STDOUT_FILENO<<'\n';
+		cout<<"*******\n";
                 if (dup2(pipeFd[1], STDOUT_FILENO) == -1) {
                     cout << "failure cuased by 1" << strerror(errno) << '\n';
                     exitProgram(strerror(errno));
                 }
-
-                if (execv(executable, arguments) == -1) {
+		cerr<<"stdout = ********"<<STDOUT_FILENO<<'\n';
+                if (execvp(executable, arguments) == -1) {
                     cerr << "failure cuased by " << strerror(errno) << "\n";
                 }
             } else {
                 cout << "parent proccess says hi\n";
+		pipeFd=nextPipe;
                 waitpid(pId, &status, 0);
                 close(pipeFd[1]);
                 cout << "child process returned\n";
@@ -469,7 +479,7 @@ char *const *devolveArgList(vector<string> list) {
             cout << "found char " << list.at(j).at(i) << " at index " << i << '\n';
             str[i] = list.at(j).at(i);
         }
-        str[list.at(j).size() + 1] = 0;
+        str[list.at(j).size()] = 0;
         cout << "constructed string " << str << '\n';
         baseArray[j] = str;
     }
@@ -479,9 +489,6 @@ char *const *devolveArgList(vector<string> list) {
     cout << "leaving devolve arg method\n";
     return thing;
 }
-
-
-
 
 string trim(string str) {
     size_t end = str.find_last_not_of(" \t");
