@@ -10,11 +10,11 @@
 #include <sys/wait.h>
 #include <pwd.h>
 
-
 using namespace std;
-
+struct Job;
 
 //global variables
+vector<Job> allJobs;
 string redirectionString = "none";
 int pipeNumber;
 
@@ -38,7 +38,10 @@ struct Job {
     Job(string, vector<Process>);
 
     void toString();
+    
+    bool isRunning;
 
+    int jid;
     int pipeNum;
     string command;
     vector<Process> processList;
@@ -165,6 +168,14 @@ void help();
 
 void exit();
 
+void bg(vector<string>);
+
+void fg(vector<string>);
+
+void runExport(vector<string>);
+
+void runJobs();
+
 int cd(const char *pathname);
 
 void signal();
@@ -246,17 +257,20 @@ void runJob(Job job) {
     cout << "entering runJob with job:\n";
     job.toString();
     cout << '\n';
-    
+    int jobLoc = allJobs.size();
+    allJobs.push_back(job);
     if (job.processList.size() == 1) {
         singleProcess(job);
     } else {
         multiProcess(job);
     }
+    allJobs.erase(allJobs.begin()+jobLoc);
+    
 }
 
 int checkForBuiltins(vector<Process> input){
   string executable = input.at(0).arguments.at(0);
-  
+  cout<<"|"<<executable<<"|"<<endl;
   if(executable.compare("exit")==0){
     exit();
   }
@@ -274,6 +288,21 @@ int checkForBuiltins(vector<Process> input){
     }
     return 0;
   }
+  else if(executable.compare("bg")==0){
+    bg(input.at(0).arguments);
+  }
+  else if(executable.compare("fg")==0){
+    fg(input.at(0).arguments);
+  }
+  else if(executable.compare("export")==0){
+    runExport(input.at(0).arguments);
+    return 0;
+  }
+  else if(executable.compare("jobs")==0){
+    runJobs();
+  }
+
+
   return 1;
 
 }
@@ -551,6 +580,71 @@ void help() {
 
 }
 
+void runJobs(){
+  if(allJobs.size()==0){
+    return;
+  }
+  cout<<"listing jobs!"<<endl;
+  cout<<"JID  STATUS \t COMMAND"<<endl;
+  for(unsigned int i=0;i<allJobs.size();i++){
+    cout<<allJobs.at(i).jid<<" ";
+    if(allJobs.at(i).isRunning){
+      cout<<"Running\t"<<endl;
+    }
+    else{
+      cout<<"Stopped\t"<<endl;
+    }
+    cout<<allJobs.at(i).command;
+  }
+
+}
+void bg(vector<string> input){
+  if(input.size()<=0 || input.size()>2){
+    cout<<"error: please enter the prompt as follows"<<endl;
+    cout<<"bg JID";
+    return;
+  }
+  
+
+}
+void fg(vector<string> input){
+  if(input.size()<=0 || input.size()>2){
+    cout<<"error: please enter the prompt as follows"<<endl;
+    cout<<"fg JID";
+    return;
+  }
+  stringstream stream(input.at(1));
+  int jid; 
+  stream >> jid;
+  int currJob = -1;
+  for(unsigned int i=0;i<allJobs.size();i++){
+    if(allJobs.at(i).jid == jid){
+      currJob = 1;
+      return;
+    }
+  }
+  if(currJob==-1){
+    cout<<"there is no job with this JID"<<endl;
+    return;
+  }
+  
+
+}
+void runExport(vector<string> input){
+  cout<<"running export"<<endl;
+  char * var = new char[input.at(0).length()];
+  for(unsigned int i=0;i<input.at(0).length();i++){
+    var[i] = input.at(0)[i];
+  }
+  char * var2 = var;
+  delete var;
+  int ev = putenv(var2);
+  if(ev<0){
+    cout<<"export failed"<<endl;
+    return;
+  }
+  cout<<"export worked"<<endl;
+}
 int cd(const char *pathname) {
     int x = chdir(pathname);
     return x;
