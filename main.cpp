@@ -48,9 +48,9 @@ struct Job {
     string command;
     vector<Process> processList;
 
-    int standardEr;
-    int standardIn;
-    int standardOut;
+    string standardEr;
+    string standardIn;
+    string standardOut;
 };
 
 void Job::toString() {
@@ -72,9 +72,9 @@ void Job::toString() {
 
 Job::Job(string com, vector<Process> processes) {
 
-    standardEr = STDERR_FILENO;
-    standardIn = STDIN_FILENO;
-    standardOut = STDOUT_FILENO;
+    standardEr ="STDERR_FILENO";
+    standardIn = "STDIN_FILENO";
+    standardOut = "STDOUT_FILENO";
     this->command = com;
     this->pipeNum = pipeNumber;
     this->processList = processes;
