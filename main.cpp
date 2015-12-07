@@ -9,7 +9,8 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <pwd.h>
-
+#include <fcntl.h>
+#include <sys/stat.h>
 
 using namespace std;
 
@@ -43,9 +44,9 @@ struct Job {
     string command;
     vector<Process> processList;
 
-    string standardEr;
-    string standardIn;
-    string standardOut;
+    int standardEr;
+    int standardIn;
+    int standardOut;
 };
 
 void Job::toString() {
@@ -67,9 +68,9 @@ void Job::toString() {
 
 Job::Job(string com, vector<Process> processes) {
 
-    standardEr = "STDERR_FILENO";
-    standardIn = "STDIN_FILENO";
-    standardOut = "STDOUT_FILENO";
+    standardEr = STDERR_FILENO;
+    standardIn = STDIN_FILENO;
+    standardOut = STDOUT_FILENO;
     this->command = com;
     this->pipeNum = pipeNumber;
     this->processList = processes;
@@ -241,7 +242,8 @@ void runJob(Job job) {
     cout << "entering runJob with job:\n";
     job.toString();
     cout << '\n';
-    
+ 	
+    errorReDirect(job);   
     if (job.processList.size() == 1) {
         singleProcess(job);
     } else {
@@ -259,12 +261,17 @@ void singleProcess(Job job){
         exitProgram(strerror(errno));
     }
     if (pId == 0) {
-        deSignal();
+       
+	 deSignal();
         cout << "Child says hi :)\n";
         const char *executable = process.arguments.at(0).c_str();
         char *const *arguments = devolveArgList(process.arguments);
         cout << "child execing program " << executable << '\n';
-        if (execvp(executable, arguments) == -1) {
+	
+	outputReDirect(job);
+	inputReDirect(job);
+        
+	if (execvp(executable, arguments) == -1) {
             cout << "total failure q" << strerror(errno) << '\n';
             exitProgram(strerror(errno));
         }
@@ -317,7 +324,7 @@ void multiProcess(Job job){
                     cerr << "failure cused by " << strerror(errno) << '\n';
                     exitProgram(strerror(errno));
                 }
-
+		inputReDirect(job);
                 if (execvp(executable, arguments) == -1) {
                     cerr << "failure caused by " << strerror(errno) << '\n';
                     exitProgram(strerror(errno));
@@ -344,7 +351,7 @@ void multiProcess(Job job){
                     cerr << "failure cuased by " << strerror(errno) << "\n";
                     exitProgram(strerror(errno));
                 }
-
+		outputRedirect(job);
                 if (execvp(executable, arguments) == -1) {
                     cerr << "failure cuased by " << strerror(errno) << "\n";
                 }
@@ -489,7 +496,45 @@ char *const *devolveArgList(vector<string> list) {
     cout << "leaving devolve arg method\n";
     return thing;
 }
-
+void inputReDirect(Job job){
+    int fd;
+    cerr<<"redirecting input\n";
+    if((fd=open(job.standardIn.c_str(),O_RDONLY))==-1){
+	cerr<<"failure to open cuased by: ";
+	exitProgram(strerror(errno));
+    }
+    close(fd);
+    if(dup2(fd,STDIN_FILENO)==-1){
+        cerr<<"failure to dup2 cuased by: ";
+	exitProgram(strerror(errno));
+    }
+}
+void outputReDirect(Job job){
+    int fd;
+    cerr<<"redirecting output\n";
+    if((fd = open(job.standardOut.c_str(),O_RDONLY))==-1){
+        cerr<<"Failure to open cuased by: ";
+	exitProgram(strerror(errno));
+    }
+    close(fd);
+    if(dup2(fd,STDOUT_FILENO)==-1){
+        cerr<<"fualure to dup2 cuased by :";
+	exitProgram(strerror(errno));
+    }
+}
+void errorReDirect(Job job){
+    int fd;
+    cerr<<"redirecting error\n";
+    if((fd = open(job.standardEr.c_str(),O_RDONLY))==-1){
+	cerr<<"failure to open cuased by: ";
+	exitProgram(strerror(errno));
+    }
+    close(fd);
+    if(dup2(fd,STDERR_FILENO)==-1){
+	cerr<<"faiure to dup2 cuased by :";
+	exitProgram(strerror(errno));
+    }
+}
 string trim(string str) {
     size_t end = str.find_last_not_of(" \t");
     if (string::npos != end) {
