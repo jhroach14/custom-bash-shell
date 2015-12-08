@@ -202,7 +202,9 @@ string prompt();
 
 void help();
 
-void exit();
+void runExit();
+
+void runExit(int n);
 
 void bg(vector<string>);
 
@@ -213,6 +215,8 @@ void runExport(vector<string>);
 void runJobs();
 
 int cd(const char *pathname);
+
+int cd();
 
 void signal();
 
@@ -275,15 +279,15 @@ int main() {
 
 //utility methods
 string prompt() {
-    cout << "entering prompt Method\n";
+  //cout << "entering prompt Method\n";
     string prompt = "1730sh:";
 
     struct passwd *pw = getpwuid(getuid());
     string home = pw->pw_dir;
-    cout << "home Directory found to be " << home << '\n';
+    //cout << "home Directory found to be " << home << '\n';
 
     string current = get_current_dir_name();
-    cout << "Found current to be " << current << '\n' << '\n';
+    //cout << "Found current to be " << current << '\n' << '\n';
 
     if (current.substr(0, home.length()).compare(home) == 0) {
         string temp = current;
@@ -313,9 +317,9 @@ void deSignal(){
 }
 
 void runJob(Job job) {
-    cout << "entering runJob with job:\n";
-    job.toString();
-    cout << '\n';
+  //cout << "entering runJob with job:\n";
+  //job.toString();
+  //cout << '\n';
 
     int jobLoc = allJobs.size();
     allJobs.push_back(job);
@@ -358,7 +362,19 @@ int checkForBuiltins(vector<Process> input){
   string executable = input.at(0).arguments.at(0);
   
   if(executable.compare("exit")==0){
-    exit();
+    if(input.at(0).arguments.size()==1){
+      runExit();
+    }
+    else if(input.at(0).arguments.size()==2){
+      stringstream ss(input.at(0).arguments.at(1));
+      int n;
+      ss >> n;
+      runExit(n);
+    }
+    else{
+     
+      runExit(EXIT_FAILURE);
+    }
   }
   else if(executable.compare("help")==0){
     cout<<"help called"<<endl;
@@ -368,7 +384,19 @@ int checkForBuiltins(vector<Process> input){
   }
   else if(executable.compare("cd")==0){
     cout<<"change directory called"<<endl;
-    int c = cd(input.at(0).arguments.at(1).c_str());
+    int c;
+    if(input.at(0).arguments.size()>1){
+      cout<<"changing to a specific directory"<<endl;
+      c = cd(input.at(0).arguments.at(1).c_str());
+    }
+    else if(input.at(0).arguments.size()==1){
+      cout<<"going to home directory"<<endl;
+      c = cd();
+    }
+    else{
+      cout<<"cd must have exactly 1 or 2 arguments"<<endl;
+      return -1;
+    }
     if(c<0){
       return -1;
     }
@@ -550,19 +578,37 @@ vector<Process> makeProcesses(vector<string> argsList) {
         string arg = argsList.at(i);
         Process p;
         int prev = 0;
-
+	bool inQuotes = false;
         for (unsigned int j = 0; j < arg.length(); j++) {
             char ch = arg.at(j);
+	    if(ch == '"'){
+	      if(!((j>0)&&(arg.at(j-1)=='\\'))){
+	        inQuotes = !inQuotes;
+	        continue;
+	      }
+	    }
+	    if(ch=='\\'){
+	      if((j>0)&&(arg.at(j-1)=='\\')){
+
+	      }
+	      else{
+		continue;
+	      }
+	    }
             if (j == (arg.length() - 1)) {
                 p.arguments.push_back(arg.substr(prev, (arg.length() - prev)));
             }
-            if (ch == ' ' || ch == '\t') {
+            if ((ch == ' ' || ch == '\t') && !inQuotes) {
                 if (arg.at(j - 1) != ' ' && arg.at(j - 1) != '\t') {
                     p.arguments.push_back(arg.substr(prev, j - prev));
                 }
                 prev = j + 1;
             }
-            if (ch == '"' && arg.at(j - 1) != '\\') {
+	    if(inQuotes){
+	      p.arguments.push_back(arg.substr(prev, j - prev));
+	      prev = j+1;
+	    }
+            /*if (ch == '"' && arg.at(j - 1) != '\\') {
                 int count = 0;
                 for (unsigned int k = (j + 1); k < arg.length(); k++, count++) {
                     char ch2 = arg.at(k);
@@ -573,7 +619,7 @@ vector<Process> makeProcesses(vector<string> argsList) {
                         break;
                     }
                 }
-            }
+		}*/
 
         }
         processes.push_back(p);
@@ -586,7 +632,6 @@ vector<string> divideByPipes(string command) {
     command = trim(command);
     unsigned long prev = 0;
     vector<string> arguments;
-    bool inQuotes = false;
     for(unsigned int i=0;i<command.length();i++){
       if(command[i] == '&'){
         cout<<"found the ampersand"<<endl;
@@ -605,15 +650,7 @@ vector<string> divideByPipes(string command) {
             prev = i + 1;
             pipeNumber++;
         }
-	if(ch == '"'){
-	  if((i>0)&&(command.at(i-1)=='\\')){
-	    
-	  }
-	  else{
-	    inQuotes = !inQuotes;
-	    
-	  }
-	}
+	
         if (i == (command.length() - 1)) {
             arguments.push_back(command.substr(prev, (i - prev) + 1));
             cerr<<"found process "<<command.substr(prev,(i-prev)+1);
@@ -637,7 +674,6 @@ vector<string> divideByPipes(string command) {
 char *const *devolveArgList(vector<string> list) {
     cout << "entering devolve arg method\n";
     char **baseArray = new char *[list.size()+1];
-    bool inQuotes = false;
     for (unsigned int j = 0; j < list.size(); j++) {
         cout << "arg size = " << list.at(j).size() << '\n';
         char *str = new char[list.at(j).size() + 1];
@@ -736,18 +772,28 @@ void exitProgram(string message) {
     exit(EXIT_FAILURE);
 }
 
-void exit() {
+void runExit() {
   cout<<"Programmed successfully closed by user"<<endl;
   exit(EXIT_SUCCESS);
 
 }
+
+void runExit(int n){
+  cout<<"exited with n value"<<endl;
+  exit(n);
+}
 void help() {
-    cout << "GNU bash, version 4.1.2(1)-release (x86_64-redhat-linux-gnu)" << endl;
+    cout << "csci1730sh John Peeples, James Roach, version 1-release" << endl;
     cout << "These shell commands are defined internally.  Type `help' to see this list." << endl << endl;
     cout << "A star (*) next to a name means that the command is disabled." << endl;
     cout << "cd [dir]" << endl;
     cout << "exit [n]" << endl;
     cout << "help " << endl;
+    cout << "jobs " << endl;
+    cout << "export NAME[=WORD] " << endl;
+    cout << "bg JID " << endl;
+    cout << "fg JID " << endl;
+    
 
 }
 
@@ -803,20 +849,50 @@ void fg(vector<string> input){
 }
 void runExport(vector<string> input){
   cout<<"running export"<<endl;
-  char * var = new char[input.at(0).length()];
-  for(unsigned int i=0;i<input.at(0).length();i++){
-    var[i] = input.at(0)[i];
+  for(unsigned int x=1;x<input.size();x++){
+    int pre =0;
+    int post =0;
+    bool before = true;
+    bool equals = false;
+    for(unsigned int i=0;i<input.at(x).length();i++){
+      if(input.at(x)[i] == '='){
+	before = false;
+	equals = true;
+      }
+      else if(before){
+	pre++;
+      }
+      else if(!before){
+	post++;
+      }
+    }
+
+   string preVar = "";
+   string postVar = "";
+    for(int i=0;i<pre;i++){
+      preVar+= input.at(x)[i];
+    }
+    for(int i=0;i<post;i++){
+      postVar+= input.at(x)[i+pre+1];
+    }
+   
+    int ev;
+    if(equals) ev = setenv(preVar.c_str(), postVar.c_str(),1);
+    else ev = setenv(preVar.c_str(), "?",1);
+    if(ev<0){
+      cout<<"error: "<<strerror(errno)<<endl;
+      return;
+    }
+    cout<<"export worked"<<endl;
   }
-  char * var2 = var;
-  delete var;
-  int ev = putenv(var2);
-  if(ev<0){
-    cout<<"export failed"<<endl;
-    return;
-  }
-  cout<<"export worked"<<endl;
 }
 int cd(const char *pathname) {
     int x = chdir(pathname);
     return x;
+}
+int cd(){
+  struct passwd *pw = getpwuid(getuid());
+  string home = pw->pw_dir;
+  int x = chdir(home.c_str());
+  return x;
 }
