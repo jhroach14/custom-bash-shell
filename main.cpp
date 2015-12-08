@@ -236,16 +236,15 @@ int main() {
         vector<string> argsList = divideByPipes(command);
 	
         vector<Process> processes = makeProcesses(argsList);
-	cout<<"made processes"<<endl;
+	cout<<"processes made"<<endl;
 	int cfb = checkForBuiltins(processes);
         if(cfb==0){
           continue;
         }
-
 	cout<<"checked for builtins"<<endl;
-        Job job(command, processes);
-       
-	runJob(job);
+        
+	Job job(command, processes);
+        runJob(job);
 	
 	pipeNumber=0;
 	loopFlag++;
@@ -526,7 +525,7 @@ vector<Process> makeProcesses(vector<string> argsList) {
         string arg = argsList.at(i);
         Process p;
         int prev = 0;
-	cout<<"made it through " << i <<"loops"<<endl;
+	//cout<<"made it through " << i <<"loops"<<endl;
         for (unsigned int j = 0; j < arg.length(); j++) {
             char ch = arg.at(j);
             if (j == (arg.length() - 1)) {
@@ -571,14 +570,14 @@ vector<string> divideByPipes(string command) {
 	
         if (ch == '|') {
             arguments.push_back(command.substr(prev, (i - prev)));
-            cerr<<"found process "<<command.substr(prev,(i-prev));
+            cerr<<"found process "<<command.substr(prev,(i-prev))<<'\n';
             prev = i + 1;
             pipeNumber++;
         }
         if (i == (command.length() - 1)) {
 	  
             arguments.push_back(command.substr(prev, (i - prev) + 1));
-            cerr<<"found process "<<command.substr(prev,(i-prev)+1);
+            cerr<<"found process "<<command.substr(prev,(i-prev)+1)<<'\n';
         }
         if ((ch == '<') | (ch == '>')) {
             if (command.at(i - 1) == 'e') {
