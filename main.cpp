@@ -36,9 +36,10 @@ void Process::toString() {
 //Job
 struct Job {
     Job(string, vector<Process>);
-
+    
     void toString();
     
+    bool fg;
     bool isRunning;
 
     int jid;
@@ -76,7 +77,8 @@ Job::Job(string com, vector<Process> processes) {
     this->command = com;
     this->pipeNum = pipeNumber;
     this->processList = processes;
-
+    
+    
     if (redirectionString.compare("none") != 0) {
         stringstream redirectionStream(redirectionString);
         for (unsigned int i = 0; i < redirectionString.length(); i++) {
@@ -99,6 +101,7 @@ Job::Job(string com, vector<Process> processes) {
                             redirectionStream >> this->standardOut;
                             this->standardOut += " (truncate)";
                         }
+
                     } else {
                         redirectionStream.ignore(256, ' ');
                         redirectionStream >> this->standardOut;
@@ -201,10 +204,12 @@ int main() {
         vector<string> argsList = divideByPipes(command);
 	
         vector<Process> processes = makeProcesses(argsList);
+	cout<<"made processes"<<endl;
 	int cfb = checkForBuiltins(processes);
         if(cfb==0){
           continue;
         }
+	cout<<"checked for builtins"<<endl;
         Job job(command, processes);
 
         runJob(job);
@@ -241,7 +246,6 @@ void signal(){
     signal(SIGTSTP, SIG_IGN);
     signal(SIGTTIN, SIG_IGN);
     signal(SIGTTOU, SIG_IGN);
-    signal(SIGCHLD, SIG_IGN);
 }
 
 void deSignal(){
@@ -259,18 +263,39 @@ void runJob(Job job) {
     cout << '\n';
     int jobLoc = allJobs.size();
     allJobs.push_back(job);
-    if (job.processList.size() == 1) {
-        singleProcess(job);
-    } else {
-        multiProcess(job);
+    if(job.fg){
+      if (job.processList.size() == 1) {
+          singleProcess(job);
+      } else {
+          multiProcess(job);
+      }
+      allJobs.erase(allJobs.begin()+jobLoc);
     }
-    allJobs.erase(allJobs.begin()+jobLoc);
-    
+    else{
+      int pid;
+      int status;
+      if((pid = fork()) == -1){
+	exitProgram(strerror(errno));
+      }
+      if(pid==0){
+        if (job.processList.size() == 1) {
+	    singleProcess(job);
+	  } else {
+	    multiProcess(job);
+        }
+	  exitProgram("this child process has died");
+      }
+      else{
+        cout<<"waiting on background process"<<endl;
+        int result = waitpid(pid,&status,WNOHANG);
+        cout<<"background process complete"<<endl;
+	}
+      
+    }
 }
 
 int checkForBuiltins(vector<Process> input){
   string executable = input.at(0).arguments.at(0);
-  cout<<"|"<<executable<<"|"<<endl;
   if(executable.compare("exit")==0){
     exit();
   }
@@ -313,24 +338,27 @@ void singleProcess(Job job){
     int pId;
     int status;
     Process process = job.processList.at(0);
-    if ((pId = fork()) == -1) {
-        exitProgram(strerror(errno));
+    if(job.fg){
+      if ((pId = fork()) == -1) {
+          exitProgram(strerror(errno));
+      }
+      if (pId == 0) {
+          deSignal();
+          cout << "Child says hi :)\n";
+          const char *executable = process.arguments.at(0).c_str();
+          char *const *arguments = devolveArgList(process.arguments);
+          cout << "child execing program " << executable << '\n';
+          if (execvp(executable, arguments) == -1) {
+              cout << "total failure q" << strerror(errno) << '\n';
+              exitProgram(strerror(errno));
+          }
+      } else {
+          cout << "parent says hi \n";
+          cout<< waitpid(pId, &status, 0)<<"\n";
+          cout << "child process returned\n";
+      }
     }
-    if (pId == 0) {
-        deSignal();
-        cout << "Child says hi :)\n";
-        const char *executable = process.arguments.at(0).c_str();
-        char *const *arguments = devolveArgList(process.arguments);
-        cout << "child execing program " << executable << '\n';
-        if (execvp(executable, arguments) == -1) {
-            cout << "total failure q" << strerror(errno) << '\n';
-            exitProgram(strerror(errno));
-        }
-    } else {
-        cout << "parent says hi \n";
-        cout<< waitpid(pId, &status, 0)<<"\n";
-        cout << "child process returned\n";
-    }
+    
 }
 
 void multiProcess(Job job){
@@ -459,12 +487,13 @@ vector<Process> makeProcesses(vector<string> argsList) {
         string arg = argsList.at(i);
         Process p;
         int prev = 0;
-
+	cout<<"made it through " << i <<"loops"<<endl;
         for (unsigned int j = 0; j < arg.length(); j++) {
             char ch = arg.at(j);
             if (j == (arg.length() - 1)) {
                 p.arguments.push_back(arg.substr(prev, (arg.length() - prev)));
             }
+	    
             if (ch == ' ' || ch == '\t') {
                 if (arg.at(j - 1) != ' ' && arg.at(j - 1) != '\t') {
                     p.arguments.push_back(arg.substr(prev, j - prev));
@@ -499,7 +528,8 @@ vector<string> divideByPipes(string command) {
     for (unsigned long i = 0; i < command.length(); i++) {
 
         char ch = command.at(i);
-
+	//string trimmed = trim(command);
+	
         if (ch == '|') {
             arguments.push_back(command.substr(prev, (i - prev)));
             // cout<<"found process "<<command.substr(prev,(i-prev));
@@ -507,6 +537,7 @@ vector<string> divideByPipes(string command) {
             pipeNumber++;
         }
         if (i == (command.length() - 1)) {
+	  
             arguments.push_back(command.substr(prev, (i - prev) + 1));
             // cout<<"found process "<<command.substr(prev,(i-prev));
 
@@ -523,6 +554,7 @@ vector<string> divideByPipes(string command) {
     for (unsigned int i = 0; i < arguments.size(); i++) {
         arguments.at(i) = trim(arguments.at(i));
     }
+    cout<<"num args: "<<arguments.size()<<endl;
     return arguments;
 }
 
