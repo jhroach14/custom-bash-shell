@@ -38,14 +38,13 @@ void Process::toString() {
 //Job
 struct Job {
     Job(string, vector<Process>);
-    
+
     void toString();
 
     void reset();
     
-    bool fg;
     bool isRunning;
-
+    bool fg;
     int jid;
     int pipeNum;
     string command;
@@ -76,7 +75,15 @@ void Job::toString() {
     }
 }
 
-Job::Job(string com, vector<Process> processes) {
+Job::Job(string com, vector<Process> processes) { 
+    this->fg = true;
+    for(unsigned int i=0;i<command.length();i++){
+        if(command[i] == '&'){
+            cout<<"found the ampersand"<<endl;
+            this->fg = false;
+        }
+    }
+
     errFlag=0;
     outFlag=0;
     standardEr ="STDERR_FILENO";
@@ -86,7 +93,7 @@ Job::Job(string com, vector<Process> processes) {
     this->pipeNum = pipeNumber;
     this->processList = processes;
     
-    
+
     if (redirectionString.compare("none") != 0) {
         stringstream redirectionStream(redirectionString);
         for (unsigned int i = 0; i < redirectionString.length(); i++) {
@@ -110,7 +117,6 @@ Job::Job(string com, vector<Process> processes) {
 			    outFlag=1;
                             //this->standardOut += " (truncate)";
                         }
-
                     } else {
                         redirectionStream.ignore(256, ' ');
                         redirectionStream >> this->standardOut;
@@ -232,20 +238,35 @@ int main() {
         cout << prompt();
         string command;
         getline(cin , command);
-
-        vector<string> argsList = divideByPipes(command);
+	if(command.length()==0){
+	    continue;
+	}
+	bool fg = true;
+       
+	for(unsigned int i=0;i<command.length();i++){
+	    if(command[i] == '&'){
+	        fg = false;
+	    }
+	}
+        
+	vector<string> argsList = divideByPipes(command);
+	vector<Process> processes = makeProcesses(argsList);
 	
-        vector<Process> processes = makeProcesses(argsList);
-	cout<<"made processes"<<endl;
 	int cfb = checkForBuiltins(processes);
         if(cfb==0){
-          continue;
+            continue;
         }
-
 	cout<<"checked for builtins"<<endl;
-        Job job(command, processes);
-       
-	runJob(job);
+	
+        Job job(command,processes);
+	job.fg = fg;
+        if(job.fg){
+	    cout<<"job will be in foreground"<<endl;
+	}  
+	else{
+	    cout<<"job will be in background"<<endl;
+	}
+        runJob(job);
 	
 	pipeNumber=0;
 	loopFlag++;
@@ -282,6 +303,7 @@ void signal(){
     signal(SIGTSTP, SIG_IGN);
     signal(SIGTTIN, SIG_IGN);
     signal(SIGTTOU, SIG_IGN);
+    signal(SIGCHLD, SIG_IGN);
 }
 
 void deSignal(){
@@ -304,31 +326,34 @@ void runJob(Job job) {
     errorReDirect(job);   
 
     if(job.fg){
-      if (job.processList.size() == 1) {
-          singleProcess(job);
-      } else {
-          multiProcess(job);
-      }
-      allJobs.erase(allJobs.begin()+jobLoc);
-    } else{
-      int pid;
-      int status;
-      if((pid = fork()) == -1){
-	exitProgram(strerror(errno));
-      }
-      if(pid==0){
+        cout<<"running job in foreground"<<endl;
         if (job.processList.size() == 1) {
-	    singleProcess(job);
-	  } else {
-	    multiProcess(job);
+            singleProcess(job);
+        }else {
+            multiProcess(job);
         }
-	  exitProgram("this child process has died");
-      } else{
-        cout<<"waiting on background process"<<endl;
-        int result = waitpid(pid,&status,WNOHANG);
-        cout<<"background process complete"<<endl;
+    }else{
+        cout<<"running job in background"<<endl;
+
+        int pid;
+        int status;
+        if((pid=fork())==-1){
+	    exitProgram(strerror(errno));
+        }
+        if(pid==0){
+            if (job.processList.size() == 1) {
+	        singleProcess(job);
+	    }else {
+	        multiProcess(job);
+            }
+	    exitProgram("this child process has died");
+        }else{
+            cout<<"waiting on background process"<<endl;
+            int result = waitpid(pid,&status,WNOHANG);
+            cout<<"background process complete"<<endl;
 	}
     }
+    allJobs.erase(allJobs.begin()+jobLoc);
 }
 
 int checkForBuiltins(vector<Process> input){
@@ -366,7 +391,6 @@ int checkForBuiltins(vector<Process> input){
     if(executable.compare("jobs")==0){
         runJobs();
     }
-
     return 1;
 }
 
@@ -526,13 +550,12 @@ vector<Process> makeProcesses(vector<string> argsList) {
         string arg = argsList.at(i);
         Process p;
         int prev = 0;
-	cout<<"made it through " << i <<"loops"<<endl;
+
         for (unsigned int j = 0; j < arg.length(); j++) {
             char ch = arg.at(j);
             if (j == (arg.length() - 1)) {
                 p.arguments.push_back(arg.substr(prev, (arg.length() - prev)));
             }
-	    
             if (ch == ' ' || ch == '\t') {
                 if (arg.at(j - 1) != ' ' && arg.at(j - 1) != '\t') {
                     p.arguments.push_back(arg.substr(prev, j - prev));
@@ -563,20 +586,35 @@ vector<string> divideByPipes(string command) {
     command = trim(command);
     unsigned long prev = 0;
     vector<string> arguments;
+    bool inQuotes = false;
+    for(unsigned int i=0;i<command.length();i++){
+      if(command[i] == '&'){
+        cout<<"found the ampersand"<<endl;
+        command.erase(command.begin()+i);
+      }
+      
+    }
 
     for (unsigned long i = 0; i < command.length(); i++) {
 
         char ch = command.at(i);
-	//string trimmed = trim(command);
-	
+
         if (ch == '|') {
             arguments.push_back(command.substr(prev, (i - prev)));
             cerr<<"found process "<<command.substr(prev,(i-prev));
             prev = i + 1;
             pipeNumber++;
         }
+	if(ch == '"'){
+	  if((i>0)&&(command.at(i-1)=='\\')){
+	    
+	  }
+	  else{
+	    inQuotes = !inQuotes;
+	    
+	  }
+	}
         if (i == (command.length() - 1)) {
-	  
             arguments.push_back(command.substr(prev, (i - prev) + 1));
             cerr<<"found process "<<command.substr(prev,(i-prev)+1);
         }
@@ -593,7 +631,6 @@ vector<string> divideByPipes(string command) {
     for (unsigned int i = 0; i < arguments.size(); i++) {
         arguments.at(i) = trim(arguments.at(i));
     }
-    cout<<"num args: "<<arguments.size()<<endl;
     return arguments;
 }
 
@@ -601,11 +638,14 @@ char *const *devolveArgList(vector<string> list) {
     cout << "entering devolve arg method\n";
     char **baseArray = new char *[list.size()+1];
 
+    bool inQuotes = false;
     for (unsigned int j = 0; j < list.size(); j++) {
         cout << "arg size = " << list.at(j).size() << '\n';
         char *str = new char[list.at(j).size() + 1];
         for (unsigned int i = 0; i < list.at(j).size(); i++) {
-            cout << "found char " << list.at(j).at(i) << " at index " << i << '\n';
+            
+	  cout << "found char " << list.at(j).at(i) << " at index " << i << '\n';
+	  
             str[i] = list.at(j).at(i);
         }
         str[list.at(j).size()] = '\0';
