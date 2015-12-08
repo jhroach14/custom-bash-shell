@@ -9,6 +9,8 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <pwd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 using namespace std;
 struct Job;
@@ -36,12 +38,13 @@ void Process::toString() {
 //Job
 struct Job {
     Job(string, vector<Process>);
-    
-    void toString();
-    
-    bool fg;
-    bool isRunning;
 
+    void toString();
+
+    void reset();
+    
+    bool isRunning;
+    bool fg;
     int jid;
     int pipeNum;
     string command;
@@ -50,6 +53,9 @@ struct Job {
     string standardEr;
     string standardIn;
     string standardOut;
+
+    int errFlag;//value of zero denotes append value of 1 denotes truncate
+    int outFlag;
 };
 
 void Job::toString() {
@@ -70,15 +76,24 @@ void Job::toString() {
 }
 
 Job::Job(string com, vector<Process> processes) {
+  for(unsigned int i=0;i<command.length();i++){
+    if(command[i] == '&'){
+      cout<<"found the ampersand"<<endl;
+      this->fg = false;
+    }
+  }
 
-    standardEr = "STDERR_FILENO";
+    errFlag=0;
+    outFlag=0;
+    standardEr ="STDERR_FILENO";
     standardIn = "STDIN_FILENO";
     standardOut = "STDOUT_FILENO";
     this->command = com;
     this->pipeNum = pipeNumber;
     this->processList = processes;
+    this->fg = true;
     
-    
+
     if (redirectionString.compare("none") != 0) {
         stringstream redirectionStream(redirectionString);
         for (unsigned int i = 0; i < redirectionString.length(); i++) {
@@ -94,18 +109,19 @@ Job::Job(string com, vector<Process> processes) {
                         if (redirectionString.at(i + 1) == '>') {
                             redirectionStream.ignore(3);
                             redirectionStream >> this->standardOut;
-                            this->standardOut += " (append)";
+                            //this->standardOut += " (append)";
                             i++;
                         } else {
                             redirectionStream.ignore(256, ' ');
                             redirectionStream >> this->standardOut;
-                            this->standardOut += " (truncate)";
+			    outFlag=1;
+                            //this->standardOut += " (truncate)";
                         }
-
                     } else {
                         redirectionStream.ignore(256, ' ');
                         redirectionStream >> this->standardOut;
-                        this->standardOut += " (truncate)";
+			outFlag=1;
+                        //this->standardOut += " (truncate)";
                     }
                 } else {
                     if (redirectionString.at(i - 1) == 'e') {
@@ -113,40 +129,57 @@ Job::Job(string com, vector<Process> processes) {
                             if (redirectionString.at(i + 1) == '>') {
                                 redirectionStream.ignore(4);
                                 redirectionStream >> this->standardEr;
-                                this->standardEr += " (append)";
+				//this->standardEr += " (append)";
                                 i++;
                             } else {
                                 redirectionStream.ignore(256, ' ');
                                 redirectionStream >> this->standardEr;
-                                this->standardEr += " (truncate)";
+                                errFlag=1;
+				//this->standardEr += " (truncate)";
                             }
                         } else {
                             redirectionStream.ignore(256, ' ');
                             redirectionStream >> this->standardEr;
-                            this->standardEr += " (truncate)";
+                            errFlag=1;
+			    //this->standardEr += " (truncate)";
                         }
                     } else {
                         if (i != (redirectionString.length() - 1)) {
                             if (redirectionString.at(i + 1) == '>') {
                                 redirectionStream.ignore(3);
                                 redirectionStream >> this->standardOut;
-                                this->standardOut += " (append)";
+                                //this->standardOut += " (append)";
                                 i++;
                             } else {
+				redirectionStream.ignore(1,'>');
                                 redirectionStream.ignore(256, ' ');
                                 redirectionStream >> this->standardOut;
-                                this->standardOut += " (truncate)";
+                                outFlag=1;
+				//this->standardOut += " (truncate)";
                             }
                         } else {
                             redirectionStream.ignore(256, ' ');
                             redirectionStream >> this->standardOut;
-                            this->standardOut += " (truncate)";
+                            outFlag=1;
+			    //this->standardOut += " (truncate)";
                         }
                     }
                 }
             }
         }
     }
+}
+
+void Job::reset(){
+    this->pipeNum=0;
+    this->jid=0;
+    this->command="";
+    this->processList.clear();
+    this->standardOut="STDOUT_FILENO";
+    this->standardEr="STDERR_FILENO";
+    this->standardIn="STDIN_FILENO";
+    this->errFlag=0;
+    this->outFlag=0;      
 }
 
 
@@ -189,6 +222,11 @@ void singleProcess(Job);
 
 void multiProcess(Job);
 
+void outputReDirect(Job);
+
+void errorReDirect(Job);
+
+void inputReDirect(Job);
 
 int main() {
     cout << "entering program\n";
@@ -200,21 +238,37 @@ int main() {
         cout << prompt();
         string command;
         getline(cin , command);
-
+	if(command.length()==0)continue;
+	bool fg = true;
+       
+	for(unsigned int i=0;i<command.length();i++){
+	  if(command[i] == '&'){
+	    fg = false;
+	  }
+	 
+	}
         vector<string> argsList = divideByPipes(command);
 	
         vector<Process> processes = makeProcesses(argsList);
-	cout<<"made processes"<<endl;
 	int cfb = checkForBuiltins(processes);
         if(cfb==0){
           continue;
         }
-	cout<<"checked for builtins"<<endl;
-        Job job(command, processes);
-
+	
+        Job job(command,processes);
+	job.fg = fg;
+        if(job.fg){
+	  cout<<"job will be in foreground"<<endl;
+	}  
+	else{
+	  cout<<"job will be in background"<<endl;
+	}
         runJob(job);
+	
 	pipeNumber=0;
 	loopFlag++;
+	job.reset();
+	redirectionString = "none";
     }
 }
 
@@ -246,6 +300,7 @@ void signal(){
     signal(SIGTSTP, SIG_IGN);
     signal(SIGTTIN, SIG_IGN);
     signal(SIGTTOU, SIG_IGN);
+    signal(SIGCHLD, SIG_IGN);
 }
 
 void deSignal(){
@@ -261,41 +316,47 @@ void runJob(Job job) {
     cout << "entering runJob with job:\n";
     job.toString();
     cout << '\n';
+
     int jobLoc = allJobs.size();
     allJobs.push_back(job);
+ 	
+    errorReDirect(job);   
     if(job.fg){
+      cout<<"running job in foreground"<<endl;
       if (job.processList.size() == 1) {
           singleProcess(job);
-      } else {
+      }   else {
           multiProcess(job);
       }
-      allJobs.erase(allJobs.begin()+jobLoc);
     }
     else{
+      cout<<"running job in background"<<endl;
       int pid;
       int status;
-      if((pid = fork()) == -1){
+      if((pid=fork())==-1){
 	exitProgram(strerror(errno));
       }
       if(pid==0){
-        if (job.processList.size() == 1) {
-	    singleProcess(job);
-	  } else {
-	    multiProcess(job);
-        }
-	  exitProgram("this child process has died");
+	if (job.processList.size() == 1) {
+          singleProcess(job);
+	}   else {
+          multiProcess(job);
+	}
+	exitProgram("the child process is complete");
       }
       else{
-        cout<<"waiting on background process"<<endl;
-        int result = waitpid(pid,&status,WNOHANG);
-        cout<<"background process complete"<<endl;
-	}
-      
+	cout<<"waiting on background process"<<endl;
+	int result = waitpid(pid,&status,WNOHANG);
+	cout<<"obviously not waiting dawg"<<endl;
+      }
     }
+    allJobs.erase(allJobs.begin()+jobLoc);
+    
 }
 
 int checkForBuiltins(vector<Process> input){
   string executable = input.at(0).arguments.at(0);
+  
   if(executable.compare("exit")==0){
     exit();
   }
@@ -338,29 +399,31 @@ void singleProcess(Job job){
     int pId;
     int status;
     Process process = job.processList.at(0);
-    if(job.fg){
-      if ((pId = fork()) == -1) {
-          exitProgram(strerror(errno));
-      }
-      if (pId == 0) {
-          deSignal();
-          cout << "Child says hi :)\n";
-          const char *executable = process.arguments.at(0).c_str();
-          char *const *arguments = devolveArgList(process.arguments);
-          cout << "child execing program " << executable << '\n';
-          if (execvp(executable, arguments) == -1) {
-              cout << "total failure q" << strerror(errno) << '\n';
-              exitProgram(strerror(errno));
-          }
-      } else {
-          cout << "parent says hi \n";
-          cout<< waitpid(pId, &status, 0)<<"\n";
-          cout << "child process returned\n";
-      }
+    if ((pId = fork()) == -1) {
+        exitProgram(strerror(errno));
     }
-    
-}
+    if (pId == 0) {
+       
+	deSignal();
+        cout << "Child says hi :)\n";
+        const char *executable = process.arguments.at(0).c_str();
+        char *const *arguments = devolveArgList(process.arguments);
+        cout << "child execing program '" << executable <<"'\n";
 
+	outputReDirect(job);
+	inputReDirect(job);
+        
+	if (execvp(executable, arguments) == -1) {
+            cout << "total failure q" << strerror(errno) << '\n';
+            exitProgram(strerror(errno));
+        }
+    } else {
+        cout << "parent says hi \n";
+        cout<< waitpid(pId, &status, 0)<<"\n";
+        cout << "child process returned\n";
+    }
+
+}
 void multiProcess(Job job){
     cout << "entered multi process logic\n";
     int pId;
@@ -403,7 +466,7 @@ void multiProcess(Job job){
                     cerr << "failure cused by " << strerror(errno) << '\n';
                     exitProgram(strerror(errno));
                 }
-
+		inputReDirect(job);
                 if (execvp(executable, arguments) == -1) {
                     cerr << "failure caused by " << strerror(errno) << '\n';
                     exitProgram(strerror(errno));
@@ -430,7 +493,7 @@ void multiProcess(Job job){
                     cerr << "failure cuased by " << strerror(errno) << "\n";
                     exitProgram(strerror(errno));
                 }
-
+		outputReDirect(job);
                 if (execvp(executable, arguments) == -1) {
                     cerr << "failure cuased by " << strerror(errno) << "\n";
                 }
@@ -487,13 +550,12 @@ vector<Process> makeProcesses(vector<string> argsList) {
         string arg = argsList.at(i);
         Process p;
         int prev = 0;
-	cout<<"made it through " << i <<"loops"<<endl;
+
         for (unsigned int j = 0; j < arg.length(); j++) {
             char ch = arg.at(j);
             if (j == (arg.length() - 1)) {
                 p.arguments.push_back(arg.substr(prev, (arg.length() - prev)));
             }
-	    
             if (ch == ' ' || ch == '\t') {
                 if (arg.at(j - 1) != ' ' && arg.at(j - 1) != '\t') {
                     p.arguments.push_back(arg.substr(prev, j - prev));
@@ -521,31 +583,46 @@ vector<Process> makeProcesses(vector<string> argsList) {
 }
 
 vector<string> divideByPipes(string command) {
-
+    command = trim(command);
     unsigned long prev = 0;
     vector<string> arguments;
+    bool inQuotes = false;
+    for(unsigned int i=0;i<command.length();i++){
+      if(command[i] == '&'){
+        cout<<"found the ampersand"<<endl;
+        command.erase(command.begin()+i);
+      }
+      
+    }
 
     for (unsigned long i = 0; i < command.length(); i++) {
 
         char ch = command.at(i);
-	//string trimmed = trim(command);
-	
+
         if (ch == '|') {
             arguments.push_back(command.substr(prev, (i - prev)));
-            // cout<<"found process "<<command.substr(prev,(i-prev));
+            cerr<<"found process "<<command.substr(prev,(i-prev));
             prev = i + 1;
             pipeNumber++;
         }
+	if(ch == '"'){
+	  if((i>0)&&(command.at(i-1)=='\\')){
+	    
+	  }
+	  else{
+	    inQuotes = !inQuotes;
+	    
+	  }
+	}
         if (i == (command.length() - 1)) {
-	  
             arguments.push_back(command.substr(prev, (i - prev) + 1));
-            // cout<<"found process "<<command.substr(prev,(i-prev));
-
+            cerr<<"found process "<<command.substr(prev,(i-prev)+1);
         }
         if ((ch == '<') | (ch == '>')) {
             if (command.at(i - 1) == 'e') {
                 i -= 1;
             }
+	    cerr<<"found process "<<command.substr(prev,(i-prev))<<'\n';
             arguments.push_back(command.substr(prev, (i - prev)));
             redirectionString = trim(command.substr(i, command.length() - i));
             break;
@@ -554,32 +631,94 @@ vector<string> divideByPipes(string command) {
     for (unsigned int i = 0; i < arguments.size(); i++) {
         arguments.at(i) = trim(arguments.at(i));
     }
-    cout<<"num args: "<<arguments.size()<<endl;
     return arguments;
 }
 
 char *const *devolveArgList(vector<string> list) {
     cout << "entering devolve arg method\n";
-    char **baseArray = new char *[list.size()];
-
+    char **baseArray = new char *[list.size()+1];
+    bool inQuotes = false;
     for (unsigned int j = 0; j < list.size(); j++) {
         cout << "arg size = " << list.at(j).size() << '\n';
         char *str = new char[list.at(j).size() + 1];
         for (unsigned int i = 0; i < list.at(j).size(); i++) {
-            cout << "found char " << list.at(j).at(i) << " at index " << i << '\n';
+            
+	  cout << "found char " << list.at(j).at(i) << " at index " << i << '\n';
+	  
             str[i] = list.at(j).at(i);
         }
-        str[list.at(j).size()] = 0;
+        str[list.at(j).size()] = '\0';
         cout << "constructed string " << str << '\n';
         baseArray[j] = str;
     }
-
+    baseArray[list.size()]='\0';
     char *const *thing = baseArray;
 
     cout << "leaving devolve arg method\n";
     return thing;
 }
-
+void inputReDirect(Job job){
+    if((job.standardIn.substr(0,12).compare("STDIN_FILENO"))!=0){
+        int fd;
+        cerr<<"redirecting input to "<<job.standardIn<<'\n';    
+	if((fd=open(job.standardIn.c_str(),O_RDONLY))==-1){
+	    cerr<<"failure to open cuased by: ";
+	    exitProgram(strerror(errno));
+        }
+        if(dup2(fd,STDIN_FILENO)==-1){
+            cerr<<"failure to dup2 cuased by: ";
+	    exitProgram(strerror(errno));
+        }
+    }else{
+	cerr<<"Input kept as defualt\n";
+    }
+}
+void outputReDirect(Job job){
+    if((job.standardOut.substr(0,13).compare("STDOUT_FILENO"))!=0){    
+        int fd;
+        cerr<<"redirecting output to "<<job.standardOut<<'\n';
+        if(job.outFlag==1){    
+	    if((fd = open(job.standardOut.c_str(),O_WRONLY|O_TRUNC|O_CREAT))==-1){
+                cerr<<"Failure to open cuased by: ";
+	        exitProgram(strerror(errno));
+            }
+	}else{
+	    if((fd = open(job.standardOut.c_str(),O_WRONLY|O_APPEND|O_CREAT))==-1){
+	        cerr<<"falure to open cuased by: ";
+		exitProgram(strerror(errno));
+	    }
+	}
+        if(dup2(fd,STDOUT_FILENO)==-1){
+            cerr<<"fualure to dup2 cuased by :";
+            exitProgram(strerror(errno));
+        }   
+    }else{
+	cerr<<"Output kept as defualt\n";
+    }
+}
+void errorReDirect(Job job){
+    if((job.standardEr.substr(0,13).compare("STDERR_FILENO"))!=0){
+        int fd;
+        cerr<<"redirecting error to "<<job.standardEr<<'\n';
+        if(job.errFlag==1){
+            if((fd = open(job.standardEr.c_str(),O_WRONLY|O_TRUNC|O_CREAT))==-1){
+	        cerr<<"failure to open cuased by: ";
+ 	        exitProgram(strerror(errno));
+            }
+	}else{
+	    if((fd = open(job.standardEr.c_str(),O_WRONLY|O_APPEND|O_CREAT))==-1){
+		cerr<<"failure to open cuased by: ";
+		exitProgram(strerror(errno));
+	    }
+	}
+        if(dup2(fd,STDERR_FILENO)==-1){
+	    cerr<<"faiure to dup2 cuased by :";
+	    exitProgram(strerror(errno));
+        }
+    }else{
+	cerr<<"error kept as defualt\n";
+    }
+}
 string trim(string str) {
     size_t end = str.find_last_not_of(" \t");
     if (string::npos != end) {
