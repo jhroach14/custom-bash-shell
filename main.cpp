@@ -1,4 +1,4 @@
-#include <iostream>
+include <iostream>
 #include <string>
 #include <vector>
 #include <sstream>
@@ -46,6 +46,7 @@ struct Job {
     bool isRunning;
     bool fg;
     int jid;
+    int status;
     int pipeNum;
     string command;
     vector<Process> processList;
@@ -217,6 +218,8 @@ void runJobs();
 int cd(const char *pathname);
 
 int cd();
+
+void printJob(int status, Job job);
 
 void signal();
 
@@ -425,7 +428,6 @@ void singleProcess(Job job){
     cout << "entering single proccess logic\n";
 
     int pId;
-    int status;
     Process process = job.processList.at(0);
     if ((pId = fork()) == -1) {
         exitProgram(strerror(errno));
@@ -447,7 +449,7 @@ void singleProcess(Job job){
         }
     } else {
         cout << "parent says hi \n";
-        cout<< waitpid(pId, &status, 0)<<"\n";
+        cout<< waitpid(pId, &job.status, 0)<<"\n";
         cout << "child process returned\n";
     }
 
@@ -563,7 +565,7 @@ void multiProcess(Job job){
             } else {
                 cout << "parent proccess says hi\n";
 		pipeFd=nextPipe;
-                waitpid(pId, &status, 0);
+                waitpid(pId, &job.status, 0);
                 close(pipeFd[1]);
                 cout << "child process returned\n";
             }
@@ -579,21 +581,26 @@ vector<Process> makeProcesses(vector<string> argsList) {
         Process p;
         int prev = 0;
 	bool inQuotes = false;
+	int quotLoc = 0;
+	string quotedArg = "";
         for (unsigned int j = 0; j < arg.length(); j++) {
             char ch = arg.at(j);
-	    if(ch == '"'){
-	      if(!((j>0)&&(arg.at(j-1)=='\\'))){
-	        inQuotes = !inQuotes;
-	        continue;
+	    if(inQuotes){
+	      if(ch != '"' && ch != '\\'){
+                quotedArg+=arg[j];
 	      }
-	    }
-	    if(ch=='\\'){
-	      if((j>0)&&(arg.at(j-1)=='\\')){
-
-	      }
-	      else{
+	      else if((j>0 && arg[j-1]=='\\' && ch == '"')){
+		quotedArg+=arg[j];
 		continue;
 	      }
+            }
+
+	    if(ch =='"'){
+	      if(inQuotes){
+		p.arguments.push_back(quotedArg);
+	      }
+	      inQuotes=!inQuotes;
+	      continue;
 	    }
             if (j == (arg.length() - 1)) {
                 p.arguments.push_back(arg.substr(prev, (arg.length() - prev)));
@@ -604,27 +611,14 @@ vector<Process> makeProcesses(vector<string> argsList) {
                 }
                 prev = j + 1;
             }
-	    if(inQuotes){
-	      p.arguments.push_back(arg.substr(prev, j - prev));
-	      prev = j+1;
-	    }
-            /*if (ch == '"' && arg.at(j - 1) != '\\') {
-                int count = 0;
-                for (unsigned int k = (j + 1); k < arg.length(); k++, count++) {
-                    char ch2 = arg.at(k);
-                    if (ch2 == '"' && arg.at(k - 1) != '\\') {
-                        p.arguments.push_back(arg.substr(j + 1, count));
-                        prev = k;
-                        j = k;
-                        break;
-                    }
-                }
-		}*/
-
-        }
+	    
+	    
+	
+	}
+        
         processes.push_back(p);
-    }
 
+    }
     return processes;
 }
 
@@ -797,6 +791,26 @@ void help() {
 
 }
 
+void printJob(Job job){
+  cout<<job.jid<<"\t";
+  if(WIFEXITED(job.status)){
+    cout<<"exited\t";
+  }
+  else if(WCOREDUMP(job.status)){
+    cout<<"core dumped\t";
+  }
+  else if(WIFSTOPPED(job.status)){
+    cout<<"stopped\t";
+  }
+  else if(WIFCONTINUED(job.status)){
+    cout<<"continued\t";
+  }
+  else {
+    cout<<"NULL\t";
+  }
+  cout<<job.command;
+
+}
 void runJobs(){
   if(allJobs.size()==0){
     return;
@@ -804,14 +818,7 @@ void runJobs(){
   cout<<"listing jobs!"<<endl;
   cout<<"JID  STATUS \t COMMAND"<<endl;
   for(unsigned int i=0;i<allJobs.size();i++){
-    cout<<allJobs.at(i).jid<<" ";
-    if(allJobs.at(i).isRunning){
-      cout<<"Running\t"<<endl;
-    }
-    else{
-      cout<<"Stopped\t"<<endl;
-    }
-    cout<<allJobs.at(i).command;
+    printJob(allJobs.at(i));
   }
 
 }
