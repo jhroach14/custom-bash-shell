@@ -40,6 +40,8 @@ struct Job {
     Job(string, vector<Process>);
 
     void toString();
+
+    void reset();
     
     bool isRunning;
 
@@ -51,6 +53,9 @@ struct Job {
     string standardEr;
     string standardIn;
     string standardOut;
+
+    int errFlag;//value of zero denotes append value of 1 denotes truncate
+    int outFlag;
 };
 
 void Job::toString() {
@@ -71,7 +76,8 @@ void Job::toString() {
 }
 
 Job::Job(string com, vector<Process> processes) {
-
+    errFlag=0;
+    outFlag=0;
     standardEr ="STDERR_FILENO";
     standardIn = "STDIN_FILENO";
     standardOut = "STDOUT_FILENO";
@@ -94,17 +100,19 @@ Job::Job(string com, vector<Process> processes) {
                         if (redirectionString.at(i + 1) == '>') {
                             redirectionStream.ignore(3);
                             redirectionStream >> this->standardOut;
-                            this->standardOut += " (append)";
+                            //this->standardOut += " (append)";
                             i++;
                         } else {
                             redirectionStream.ignore(256, ' ');
                             redirectionStream >> this->standardOut;
-                            this->standardOut += " (truncate)";
+			    outFlag=1;
+                            //this->standardOut += " (truncate)";
                         }
                     } else {
                         redirectionStream.ignore(256, ' ');
                         redirectionStream >> this->standardOut;
-                        this->standardOut += " (truncate)";
+			outFlag=1;
+                        //this->standardOut += " (truncate)";
                     }
                 } else {
                     if (redirectionString.at(i - 1) == 'e') {
@@ -112,40 +120,57 @@ Job::Job(string com, vector<Process> processes) {
                             if (redirectionString.at(i + 1) == '>') {
                                 redirectionStream.ignore(4);
                                 redirectionStream >> this->standardEr;
-                                this->standardEr += " (append)";
+				//this->standardEr += " (append)";
                                 i++;
                             } else {
                                 redirectionStream.ignore(256, ' ');
                                 redirectionStream >> this->standardEr;
-                                this->standardEr += " (truncate)";
+                                errFlag=1;
+				//this->standardEr += " (truncate)";
                             }
                         } else {
                             redirectionStream.ignore(256, ' ');
                             redirectionStream >> this->standardEr;
-                            this->standardEr += " (truncate)";
+                            errFlag=1;
+			    //this->standardEr += " (truncate)";
                         }
                     } else {
                         if (i != (redirectionString.length() - 1)) {
                             if (redirectionString.at(i + 1) == '>') {
                                 redirectionStream.ignore(3);
                                 redirectionStream >> this->standardOut;
-                                this->standardOut += " (append)";
+                                //this->standardOut += " (append)";
                                 i++;
                             } else {
+				redirectionStream.ignore(1,'>');
                                 redirectionStream.ignore(256, ' ');
                                 redirectionStream >> this->standardOut;
-                                this->standardOut += " (truncate)";
+                                outFlag=1;
+				//this->standardOut += " (truncate)";
                             }
                         } else {
                             redirectionStream.ignore(256, ' ');
                             redirectionStream >> this->standardOut;
-                            this->standardOut += " (truncate)";
+                            outFlag=1;
+			    //this->standardOut += " (truncate)";
                         }
                     }
                 }
             }
         }
     }
+}
+
+void Job::reset(){
+    this->pipeNum=0;
+    this->jid=0;
+    this->command="";
+    this->processList.clear();
+    this->standardOut="STDOUT_FILENO";
+    this->standardEr="STDERR_FILENO";
+    this->standardIn="STDIN_FILENO";
+    this->errFlag=0;
+    this->outFlag=0;      
 }
 
 
@@ -188,6 +213,11 @@ void singleProcess(Job);
 
 void multiProcess(Job);
 
+void outputReDirect(Job);
+
+void errorReDirect(Job);
+
+void inputReDirect(Job);
 
 int main() {
     cout << "entering program\n";
@@ -207,11 +237,14 @@ int main() {
         if(cfb==0){
           continue;
         }
-        Job job(command, processes);
+        Job job(command,processes);
 
         runJob(job);
+	
 	pipeNumber=0;
 	loopFlag++;
+	job.reset();
+	redirectionString = "none";
     }
 }
 
@@ -324,12 +357,12 @@ void singleProcess(Job job){
     }
     if (pId == 0) {
        
-	 deSignal();
+	deSignal();
         cout << "Child says hi :)\n";
         const char *executable = process.arguments.at(0).c_str();
         char *const *arguments = devolveArgList(process.arguments);
-        cout << "child execing program " << executable << '\n';
-	
+        cout << "child execing program '" << executable <<"'\n";
+
 	outputReDirect(job);
 	inputReDirect(job);
         
@@ -342,8 +375,8 @@ void singleProcess(Job job){
         cout<< waitpid(pId, &status, 0)<<"\n";
         cout << "child process returned\n";
     }
-}
 
+}
 void multiProcess(Job job){
     cout << "entered multi process logic\n";
     int pId;
@@ -413,7 +446,7 @@ void multiProcess(Job job){
                     cerr << "failure cuased by " << strerror(errno) << "\n";
                     exitProgram(strerror(errno));
                 }
-		outputRedirect(job);
+		outputReDirect(job);
                 if (execvp(executable, arguments) == -1) {
                     cerr << "failure cuased by " << strerror(errno) << "\n";
                 }
@@ -503,7 +536,7 @@ vector<Process> makeProcesses(vector<string> argsList) {
 }
 
 vector<string> divideByPipes(string command) {
-
+    command = trim(command);
     unsigned long prev = 0;
     vector<string> arguments;
 
@@ -513,19 +546,19 @@ vector<string> divideByPipes(string command) {
 
         if (ch == '|') {
             arguments.push_back(command.substr(prev, (i - prev)));
-            // cout<<"found process "<<command.substr(prev,(i-prev));
+            cerr<<"found process "<<command.substr(prev,(i-prev));
             prev = i + 1;
             pipeNumber++;
         }
         if (i == (command.length() - 1)) {
             arguments.push_back(command.substr(prev, (i - prev) + 1));
-            // cout<<"found process "<<command.substr(prev,(i-prev));
-
+            cerr<<"found process "<<command.substr(prev,(i-prev)+1);
         }
         if ((ch == '<') | (ch == '>')) {
             if (command.at(i - 1) == 'e') {
                 i -= 1;
             }
+	    cerr<<"found process "<<command.substr(prev,(i-prev))<<'\n';
             arguments.push_back(command.substr(prev, (i - prev)));
             redirectionString = trim(command.substr(i, command.length() - i));
             break;
@@ -539,7 +572,7 @@ vector<string> divideByPipes(string command) {
 
 char *const *devolveArgList(vector<string> list) {
     cout << "entering devolve arg method\n";
-    char **baseArray = new char *[list.size()];
+    char **baseArray = new char *[list.size()+1];
 
     for (unsigned int j = 0; j < list.size(); j++) {
         cout << "arg size = " << list.at(j).size() << '\n';
@@ -548,53 +581,76 @@ char *const *devolveArgList(vector<string> list) {
             cout << "found char " << list.at(j).at(i) << " at index " << i << '\n';
             str[i] = list.at(j).at(i);
         }
-        str[list.at(j).size()] = 0;
+        str[list.at(j).size()] = '\0';
         cout << "constructed string " << str << '\n';
         baseArray[j] = str;
     }
-
+    baseArray[list.size()]='\0';
     char *const *thing = baseArray;
 
     cout << "leaving devolve arg method\n";
     return thing;
 }
 void inputReDirect(Job job){
-    int fd;
-    cerr<<"redirecting input\n";
-    if((fd=open(job.standardIn.c_str(),O_RDONLY))==-1){
-	cerr<<"failure to open cuased by: ";
-	exitProgram(strerror(errno));
-    }
-    close(fd);
-    if(dup2(fd,STDIN_FILENO)==-1){
-        cerr<<"failure to dup2 cuased by: ";
-	exitProgram(strerror(errno));
+    if((job.standardIn.substr(0,12).compare("STDIN_FILENO"))!=0){
+        int fd;
+        cerr<<"redirecting input to "<<job.standardIn<<'\n';    
+	if((fd=open(job.standardIn.c_str(),O_RDONLY))==-1){
+	    cerr<<"failure to open cuased by: ";
+	    exitProgram(strerror(errno));
+        }
+        if(dup2(fd,STDIN_FILENO)==-1){
+            cerr<<"failure to dup2 cuased by: ";
+	    exitProgram(strerror(errno));
+        }
+    }else{
+	cerr<<"Input kept as defualt\n";
     }
 }
 void outputReDirect(Job job){
-    int fd;
-    cerr<<"redirecting output\n";
-    if((fd = open(job.standardOut.c_str(),O_RDONLY))==-1){
-        cerr<<"Failure to open cuased by: ";
-	exitProgram(strerror(errno));
-    }
-    close(fd);
-    if(dup2(fd,STDOUT_FILENO)==-1){
-        cerr<<"fualure to dup2 cuased by :";
-	exitProgram(strerror(errno));
+    if((job.standardOut.substr(0,13).compare("STDOUT_FILENO"))!=0){    
+        int fd;
+        cerr<<"redirecting output to "<<job.standardOut<<'\n';
+        if(job.outFlag==1){    
+	    if((fd = open(job.standardOut.c_str(),O_WRONLY|O_TRUNC|O_CREAT))==-1){
+                cerr<<"Failure to open cuased by: ";
+	        exitProgram(strerror(errno));
+            }
+	}else{
+	    if((fd = open(job.standardOut.c_str(),O_WRONLY|O_APPEND|O_CREAT))==-1){
+	        cerr<<"falure to open cuased by: ";
+		exitProgram(strerror(errno));
+	    }
+	}
+        if(dup2(fd,STDOUT_FILENO)==-1){
+            cerr<<"fualure to dup2 cuased by :";
+            exitProgram(strerror(errno));
+        }   
+    }else{
+	cerr<<"Output kept as defualt\n";
     }
 }
 void errorReDirect(Job job){
-    int fd;
-    cerr<<"redirecting error\n";
-    if((fd = open(job.standardEr.c_str(),O_RDONLY))==-1){
-	cerr<<"failure to open cuased by: ";
-	exitProgram(strerror(errno));
-    }
-    close(fd);
-    if(dup2(fd,STDERR_FILENO)==-1){
-	cerr<<"faiure to dup2 cuased by :";
-	exitProgram(strerror(errno));
+    if((job.standardEr.substr(0,13).compare("STDERR_FILENO"))!=0){
+        int fd;
+        cerr<<"redirecting error to "<<job.standardEr<<'\n';
+        if(job.errFlag==1){
+            if((fd = open(job.standardEr.c_str(),O_WRONLY|O_TRUNC|O_CREAT))==-1){
+	        cerr<<"failure to open cuased by: ";
+ 	        exitProgram(strerror(errno));
+            }
+	}else{
+	    if((fd = open(job.standardEr.c_str(),O_WRONLY|O_APPEND|O_CREAT))==-1){
+		cerr<<"failure to open cuased by: ";
+		exitProgram(strerror(errno));
+	    }
+	}
+        if(dup2(fd,STDERR_FILENO)==-1){
+	    cerr<<"faiure to dup2 cuased by :";
+	    exitProgram(strerror(errno));
+        }
+    }else{
+	cerr<<"error kept as defualt\n";
     }
 }
 string trim(string str) {
