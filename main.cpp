@@ -188,7 +188,7 @@ vector<string> divideByPipes(string);
 
 vector<Process> makeProcesses(vector<string>);
 
-void runJob(Job);
+void runJob(Job,int);
 
 int checkForBuiltins(vector<Process>);
 
@@ -232,12 +232,21 @@ int main() {
     cout << "entering program\n";
     pipeNumber = 0;
     int loopFlag = 0;
+    if(tcsetpgrp(STDOUT_FILENO,getpgrp())==-1){
+	cout<<"foreground process setting failed due to\n";
+	exitProgram(strerror(errno));
+    }
+    int termPGID = tcgetpgrp(STDOUT_FILENO);    
+    cout<<"termPGID = "<<termPGID<<'\n';
+
     while (loopFlag < 100) {
-        signal();
+        
+	signal();
 
         cout << prompt();
         string command;
         getline(cin , command);
+	cout<<"command: "<<command<<'\n';
 	if(command.length()==0){
 	    continue;
 	}
@@ -267,7 +276,7 @@ int main() {
 	    cout<<"job will be in background"<<endl;
 	}
 
-        runJob(job);
+        runJob(job,termPGID);
 	
 	pipeNumber=0;
 	loopFlag++;
@@ -316,7 +325,7 @@ void deSignal(){
     signal(SIGCHLD, SIG_DFL);
 }
 
-void runJob(Job job) {
+void runJob(Job job,int termPGID) {
     cout << "entering runJob with job:\n";
     job.toString();
     cout << '\n';
@@ -324,10 +333,12 @@ void runJob(Job job) {
     int jobLoc = allJobs.size();
     allJobs.push_back(job);
  	
-    errorReDirect(job);   
+    //TODO redirect error in last process   
 
     if(job.fg){
         cout<<"running job in foreground"<<endl;
+	job.jid = termPGID;
+
         if (job.processList.size() == 1) {
             singleProcess(job);
         }else {
@@ -342,16 +353,27 @@ void runJob(Job job) {
 	    exitProgram(strerror(errno));
         }
         if(pid==0){
+	    cout<<"child says hi\n";
+	    if(setpgid(getpid(),0)==-1){
+		cout<<"setpgid has failed due to\n";
+		exitProgram(strerror(errno));
+	    }
             if (job.processList.size() == 1) {
 	        singleProcess(job);
 	    }else {
 	        multiProcess(job);
             }
-	    exitProgram("this child process has died");
+	    cout<<"child process completed execution dying now\n";
+	    exit(EXIT_SUCCESS);
         }else{
-            cout<<"waiting on background process"<<endl;
+	    cout << "parent says hi \n";
+	    if(setpgid(pid,0)==-1){
+	        cout<<"setpgid has failed due to\n";
+		exitProgram(strerror(errno));
+	    }
+            cout<<"calling nohang wait on background process"<<endl;
             int result = waitpid(pid,&status,WNOHANG);
-            cout<<"background process complete"<<endl;
+            cout<<"parent moving on"<<endl;
 	}
     }
     allJobs.erase(allJobs.begin()+jobLoc);
@@ -402,27 +424,28 @@ void singleProcess(Job job){
     int status;
     Process process = job.processList.at(0);
 
-    if(job.fg){
-        if ((pId = fork()) == -1) {
+    if ((pId = fork()) == -1) {
+        exitProgram(strerror(errno));
+        }
+    if (pId == 0) {
+        deSignal();
+           
+	cout << "Child says hi :)\n";
+        const char *executable = process.arguments.at(0).c_str();
+        char *const *arguments = devolveArgList(process.arguments);
+	inputReDirection();
+	outputReDirection();
+	errorReDirection();          
+
+        cout << "child execing program '" << executable << "'\n";
+        if (execvp(executable, arguments) == -1) {
+            cout << "total failure q" << strerror(errno) << '\n';
             exitProgram(strerror(errno));
         }
-        if (pId == 0) {
-            deSignal();
-           
-	    cout << "Child says hi :)\n";
-            const char *executable = process.arguments.at(0).c_str();
-            char *const *arguments = devolveArgList(process.arguments);
-          
-            cout << "child execing program '" << executable << "'\n";
-            if (execvp(executable, arguments) == -1) {
-                cout << "total failure q" << strerror(errno) << '\n';
-                exitProgram(strerror(errno));
-            }
-        } else {
-            cout << "parent says hi \n";
-            cout<< waitpid(pId, &status, 0)<<"\n";
-            cout << "child process returned\n";
-        }
+    }else {
+        cout << "parent says hi \n";
+        cout<< waitpid(pId, &status, 0)<<"\n";
+        cout << "child process returned\n";
     }
 }
 void multiProcess(Job job){
@@ -495,6 +518,7 @@ void multiProcess(Job job){
                     exitProgram(strerror(errno));
                 }
 		outputReDirect(job);
+		errorReDirect(job);
                 if (execvp(executable, arguments) == -1) {
                     cerr << "failure cuased by " << strerror(errno) << "\n";
                 }
