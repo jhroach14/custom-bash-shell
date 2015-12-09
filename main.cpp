@@ -456,7 +456,6 @@ void singleProcess(Job job){
 
     int pId;
     Process process = job.processList.at(0);
-<<<<<<< HEAD
 
     if ((pId = fork()) == -1) {
         exitProgram(strerror(errno));
@@ -467,9 +466,9 @@ void singleProcess(Job job){
 	cout << "Child says hi :)\n";
         const char *executable = process.arguments.at(0).c_str();
         char *const *arguments = devolveArgList(process.arguments);
-	inputReDirection();
-	outputReDirection();
-	errorReDirection();          
+	inputReDirect(job);
+	outputReDirect(job);
+	errorReDirect(job);          
 
         cout << "child execing program '" << executable << "'\n";
         if (execvp(executable, arguments) == -1) {
