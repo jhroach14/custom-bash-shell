@@ -433,10 +433,10 @@ int checkForBuiltins(vector<Process> input){
     return 0;
   }
   else if(executable.compare("bg")==0){
-    bg(input.at(0).arguments);
+   // bg(input.at(0).arguments);
   }
   else if(executable.compare("fg")==0){
-    fg(input.at(0).arguments);
+   // fg(input.at(0).arguments);
   }
   else if(executable.compare("export")==0){
     runExport(input.at(0).arguments);
@@ -851,37 +851,14 @@ void runJobs(){
   }
 
 }
-void bg(vector<string> input){
-  if(input.size()<=0 || input.size()>2){
-    cout<<"error: please enter the prompt as follows"<<endl;
-    cout<<"bg JID";
-    return;
-  }
-  
-
-}
-void fg(vector<string> input){
-  if(input.size()<=0 || input.size()>2){
-    cout<<"error: please enter the prompt as follows"<<endl;
-    cout<<"fg JID";
-    return;
-  }
-  stringstream stream(input.at(1));
-  int jid; 
-  stream >> jid;
-  int currJob = -1;
-  for(unsigned int i=0;i<allJobs.size();i++){
-    if(allJobs.at(i).jid == jid){
-      currJob = 1;
-      return;
+void bg(int jid){
+    if(kill(jid,SIGCONT)==-1){
+	cout<<"bg failed due to \n";
+	exitProgram(strerror(errno));
     }
-  }
-  if(currJob==-1){
-    cout<<"there is no job with this JID"<<endl;
-    return;
-  }
-  
-
+}
+void fg(int jid){
+    
 }
 void runExport(vector<string> input){
   cout<<"running export"<<endl;
