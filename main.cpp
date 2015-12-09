@@ -219,7 +219,7 @@ int cd(const char *pathname);
 
 int cd();
 
-void printJob(int status, Job job);
+void printJob(Job job);
 
 void signal();
 
