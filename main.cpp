@@ -1,4 +1,4 @@
-#include <iostream>
+include <iostream>
 #include <string>
 #include <vector>
 #include <sstream>
@@ -46,6 +46,7 @@ struct Job {
     bool isRunning;
     bool fg;
     int jid;
+    int status;
     int pipeNum;
     string command;
     vector<Process> processList;
@@ -75,14 +76,13 @@ void Job::toString() {
     }
 }
 
-Job::Job(string com, vector<Process> processes) { 
-    this->fg = true;
-    for(unsigned int i=0;i<command.length();i++){
-        if(command[i] == '&'){
-            cout<<"found the ampersand"<<endl;
-            this->fg = false;
-        }
+Job::Job(string com, vector<Process> processes) {
+  for(unsigned int i=0;i<command.length();i++){
+    if(command[i] == '&'){
+      cout<<"found the ampersand"<<endl;
+      this->fg = false;
     }
+  }
 
     errFlag=0;
     outFlag=0;
@@ -92,6 +92,7 @@ Job::Job(string com, vector<Process> processes) {
     this->command = com;
     this->pipeNum = pipeNumber;
     this->processList = processes;
+    this->fg = true;
     
 
     if (redirectionString.compare("none") != 0) {
@@ -202,7 +203,9 @@ string prompt();
 
 void help();
 
-void exit();
+void runExit();
+
+void runExit(int n);
 
 void bg(vector<string>);
 
@@ -213,6 +216,10 @@ void runExport(vector<string>);
 void runJobs();
 
 int cd(const char *pathname);
+
+int cd();
+
+void printJob(Job job);
 
 void signal();
 
@@ -238,33 +245,30 @@ int main() {
         cout << prompt();
         string command;
         getline(cin , command);
-	if(command.length()==0){
-	    continue;
-	}
+	if(command.length()==0)continue;
 	bool fg = true;
        
 	for(unsigned int i=0;i<command.length();i++){
-	    if(command[i] == '&'){
-	        fg = false;
-	    }
+	  if(command[i] == '&'){
+	    fg = false;
+	  }
+	 
 	}
-        
-	vector<string> argsList = divideByPipes(command);
-	vector<Process> processes = makeProcesses(argsList);
+        vector<string> argsList = divideByPipes(command);
 	
+        vector<Process> processes = makeProcesses(argsList);
 	int cfb = checkForBuiltins(processes);
         if(cfb==0){
-            continue;
+          continue;
         }
-	cout<<"checked for builtins"<<endl;
 	
         Job job(command,processes);
 	job.fg = fg;
         if(job.fg){
-	    cout<<"job will be in foreground"<<endl;
+	  cout<<"job will be in foreground"<<endl;
 	}  
 	else{
-	    cout<<"job will be in background"<<endl;
+	  cout<<"job will be in background"<<endl;
 	}
         runJob(job);
 	
@@ -278,15 +282,15 @@ int main() {
 
 //utility methods
 string prompt() {
-    cout << "entering prompt Method\n";
+  //cout << "entering prompt Method\n";
     string prompt = "1730sh:";
 
     struct passwd *pw = getpwuid(getuid());
     string home = pw->pw_dir;
-    cout << "home Directory found to be " << home << '\n';
+    //cout << "home Directory found to be " << home << '\n';
 
     string current = get_current_dir_name();
-    cout << "Found current to be " << current << '\n' << '\n';
+    //cout << "Found current to be " << current << '\n' << '\n';
 
     if (current.substr(0, home.length()).compare(home) == 0) {
         string temp = current;
@@ -316,113 +320,139 @@ void deSignal(){
 }
 
 void runJob(Job job) {
-    cout << "entering runJob with job:\n";
-    job.toString();
-    cout << '\n';
+  //cout << "entering runJob with job:\n";
+  //job.toString();
+  //cout << '\n';
 
     int jobLoc = allJobs.size();
     allJobs.push_back(job);
  	
     errorReDirect(job);   
-
     if(job.fg){
-        cout<<"running job in foreground"<<endl;
-        if (job.processList.size() == 1) {
-            singleProcess(job);
-        }else {
-            multiProcess(job);
-        }
-    }else{
-        cout<<"running job in background"<<endl;
-
-        int pid;
-        int status;
-        if((pid=fork())==-1){
-	    exitProgram(strerror(errno));
-        }
-        if(pid==0){
-            if (job.processList.size() == 1) {
-	        singleProcess(job);
-	    }else {
-	        multiProcess(job);
-            }
-	    exitProgram("this child process has died");
-        }else{
-            cout<<"waiting on background process"<<endl;
-            int result = waitpid(pid,&status,WNOHANG);
-            cout<<"background process complete"<<endl;
+      cout<<"running job in foreground"<<endl;
+      if (job.processList.size() == 1) {
+          singleProcess(job);
+      }   else {
+          multiProcess(job);
+      }
+    }
+    else{
+      cout<<"running job in background"<<endl;
+      int pid;
+      int status;
+      if((pid=fork())==-1){
+	exitProgram(strerror(errno));
+      }
+      if(pid==0){
+	if (job.processList.size() == 1) {
+          singleProcess(job);
+	}   else {
+          multiProcess(job);
 	}
+	exitProgram("the child process is complete");
+      }
+      else{
+	cout<<"waiting on background process"<<endl;
+	int result = waitpid(pid,&status,WNOHANG);
+	cout<<"obviously not waiting dawg"<<endl;
+      }
     }
     allJobs.erase(allJobs.begin()+jobLoc);
+    
 }
 
 int checkForBuiltins(vector<Process> input){
-    string executable = input.at(0).arguments.at(0);
-    if(executable.compare("exit")==0){
-        exit();
-    }else
-    if(executable.compare("help")==0){
-        cout<<"help called"<<endl;
-        help();
-        return 0;
-    }else 
-    if(executable.compare("cd")==0){
-        cout<<"change directory called"<<endl;
-        int c = cd(input.at(0).arguments.at(1).c_str());
-        if(c<0){
-          return -1;
-        }
-        return 0;
+  string executable = input.at(0).arguments.at(0);
+  
+  if(executable.compare("exit")==0){
+    if(input.at(0).arguments.size()==1){
+      runExit();
     }
-    else 
-    if(executable.compare("bg")==0){
-        bg(input.at(0).arguments);
+    else if(input.at(0).arguments.size()==2){
+      stringstream ss(input.at(0).arguments.at(1));
+      int n;
+      ss >> n;
+      runExit(n);
     }
-    else 
-    if(executable.compare("fg")==0){
-        fg(input.at(0).arguments);
+    else{
+     
+      runExit(EXIT_FAILURE);
     }
-    else 
-    if(executable.compare("export")==0){
-        runExport(input.at(0).arguments);
-        return 0;
+  }
+  else if(executable.compare("help")==0){
+    cout<<"help called"<<endl;
+    help();
+    return 0;
+    
+  }
+  else if(executable.compare("cd")==0){
+    cout<<"change directory called"<<endl;
+    int c;
+    if(input.at(0).arguments.size()>1){
+      cout<<"changing to a specific directory"<<endl;
+      c = cd(input.at(0).arguments.at(1).c_str());
     }
-    else 
-    if(executable.compare("jobs")==0){
-        runJobs();
+    else if(input.at(0).arguments.size()==1){
+      cout<<"going to home directory"<<endl;
+      c = cd();
     }
-    return 1;
+    else{
+      cout<<"cd must have exactly 1 or 2 arguments"<<endl;
+      return -1;
+    }
+    if(c<0){
+      return -1;
+    }
+    return 0;
+  }
+  else if(executable.compare("bg")==0){
+    bg(input.at(0).arguments);
+  }
+  else if(executable.compare("fg")==0){
+    fg(input.at(0).arguments);
+  }
+  else if(executable.compare("export")==0){
+    runExport(input.at(0).arguments);
+    return 0;
+  }
+  else if(executable.compare("jobs")==0){
+    runJobs();
+  }
+
+
+  return 1;
+
 }
 
 void singleProcess(Job job){
     cout << "entering single proccess logic\n";
 
     int pId;
-    int status;
     Process process = job.processList.at(0);
+    if ((pId = fork()) == -1) {
+        exitProgram(strerror(errno));
+    }
+    if (pId == 0) {
+       
+	deSignal();
+        cout << "Child says hi :)\n";
+        const char *executable = process.arguments.at(0).c_str();
+        char *const *arguments = devolveArgList(process.arguments);
+        cout << "child execing program '" << executable <<"'\n";
 
-    if(job.fg){
-        if ((pId = fork()) == -1) {
+	outputReDirect(job);
+	inputReDirect(job);
+        
+	if (execvp(executable, arguments) == -1) {
+            cout << "total failure q" << strerror(errno) << '\n';
             exitProgram(strerror(errno));
         }
-        if (pId == 0) {
-            deSignal();
-           
-	    cout << "Child says hi :)\n";
-            const char *executable = process.arguments.at(0).c_str();
-            char *const *arguments = devolveArgList(process.arguments);
-          
-            cout << "child execing program '" << executable << "'\n";
-            if (execvp(executable, arguments) == -1) {
-                cout << "total failure q" << strerror(errno) << '\n';
-                exitProgram(strerror(errno));
-            }
-        } else {
-            cout << "parent says hi \n";
-            cout<< waitpid(pId, &status, 0)<<"\n";
-            cout << "child process returned\n";
-        }
+    } else {
+        cout << "parent says hi \n";
+        cout<< waitpid(pId, &job.status, 0)<<"\n";
+        cout << "child process returned\n";
     }
+
 }
 void multiProcess(Job job){
     cout << "entered multi process logic\n";
@@ -535,7 +565,7 @@ void multiProcess(Job job){
             } else {
                 cout << "parent proccess says hi\n";
 		pipeFd=nextPipe;
-                waitpid(pId, &status, 0);
+                waitpid(pId, &job.status, 0);
                 close(pipeFd[1]);
                 cout << "child process returned\n";
             }
@@ -550,35 +580,45 @@ vector<Process> makeProcesses(vector<string> argsList) {
         string arg = argsList.at(i);
         Process p;
         int prev = 0;
-
+	bool inQuotes = false;
+	int quotLoc = 0;
+	string quotedArg = "";
         for (unsigned int j = 0; j < arg.length(); j++) {
             char ch = arg.at(j);
+	    if(inQuotes){
+	      if(ch != '"' && ch != '\\'){
+                quotedArg+=arg[j];
+	      }
+	      else if((j>0 && arg[j-1]=='\\' && ch == '"')){
+		quotedArg+=arg[j];
+		continue;
+	      }
+            }
+
+	    if(ch =='"'){
+	      if(inQuotes){
+		p.arguments.push_back(quotedArg);
+	      }
+	      inQuotes=!inQuotes;
+	      continue;
+	    }
             if (j == (arg.length() - 1)) {
                 p.arguments.push_back(arg.substr(prev, (arg.length() - prev)));
             }
-            if (ch == ' ' || ch == '\t') {
+            if ((ch == ' ' || ch == '\t') && !inQuotes) {
                 if (arg.at(j - 1) != ' ' && arg.at(j - 1) != '\t') {
                     p.arguments.push_back(arg.substr(prev, j - prev));
                 }
                 prev = j + 1;
             }
-            if (ch == '"' && arg.at(j - 1) != '\\') {
-                int count = 0;
-                for (unsigned int k = (j + 1); k < arg.length(); k++, count++) {
-                    char ch2 = arg.at(k);
-                    if (ch2 == '"' && arg.at(k - 1) != '\\') {
-                        p.arguments.push_back(arg.substr(j + 1, count));
-                        prev = k;
-                        j = k;
-                        break;
-                    }
-                }
-            }
-
-        }
+	    
+	    
+	
+	}
+        
         processes.push_back(p);
-    }
 
+    }
     return processes;
 }
 
@@ -586,7 +626,6 @@ vector<string> divideByPipes(string command) {
     command = trim(command);
     unsigned long prev = 0;
     vector<string> arguments;
-    bool inQuotes = false;
     for(unsigned int i=0;i<command.length();i++){
       if(command[i] == '&'){
         cout<<"found the ampersand"<<endl;
@@ -605,15 +644,7 @@ vector<string> divideByPipes(string command) {
             prev = i + 1;
             pipeNumber++;
         }
-	if(ch == '"'){
-	  if((i>0)&&(command.at(i-1)=='\\')){
-	    
-	  }
-	  else{
-	    inQuotes = !inQuotes;
-	    
-	  }
-	}
+	
         if (i == (command.length() - 1)) {
             arguments.push_back(command.substr(prev, (i - prev) + 1));
             cerr<<"found process "<<command.substr(prev,(i-prev)+1);
@@ -637,8 +668,6 @@ vector<string> divideByPipes(string command) {
 char *const *devolveArgList(vector<string> list) {
     cout << "entering devolve arg method\n";
     char **baseArray = new char *[list.size()+1];
-
-    bool inQuotes = false;
     for (unsigned int j = 0; j < list.size(); j++) {
         cout << "arg size = " << list.at(j).size() << '\n';
         char *str = new char[list.at(j).size() + 1];
@@ -737,21 +766,51 @@ void exitProgram(string message) {
     exit(EXIT_FAILURE);
 }
 
-void exit() {
+void runExit() {
   cout<<"Programmed successfully closed by user"<<endl;
   exit(EXIT_SUCCESS);
 
 }
+
+void runExit(int n){
+  cout<<"exited with n value"<<endl;
+  exit(n);
+}
 void help() {
-    cout << "GNU bash, version 4.1.2(1)-release (x86_64-redhat-linux-gnu)" << endl;
+    cout << "csci1730sh John Peeples, James Roach, version 1-release" << endl;
     cout << "These shell commands are defined internally.  Type `help' to see this list." << endl << endl;
     cout << "A star (*) next to a name means that the command is disabled." << endl;
     cout << "cd [dir]" << endl;
     cout << "exit [n]" << endl;
     cout << "help " << endl;
+    cout << "jobs " << endl;
+    cout << "export NAME[=WORD] " << endl;
+    cout << "bg JID " << endl;
+    cout << "fg JID " << endl;
+    
 
 }
 
+void printJob(Job job){
+  cout<<job.jid<<"\t";
+  if(WIFEXITED(job.status)){
+    cout<<"exited\t";
+  }
+  else if(WCOREDUMP(job.status)){
+    cout<<"core dumped\t";
+  }
+  else if(WIFSTOPPED(job.status)){
+    cout<<"stopped\t";
+  }
+  else if(WIFCONTINUED(job.status)){
+    cout<<"continued\t";
+  }
+  else {
+    cout<<"NULL\t";
+  }
+  cout<<job.command;
+
+}
 void runJobs(){
   if(allJobs.size()==0){
     return;
@@ -759,14 +818,7 @@ void runJobs(){
   cout<<"listing jobs!"<<endl;
   cout<<"JID  STATUS \t COMMAND"<<endl;
   for(unsigned int i=0;i<allJobs.size();i++){
-    cout<<allJobs.at(i).jid<<" ";
-    if(allJobs.at(i).isRunning){
-      cout<<"Running\t"<<endl;
-    }
-    else{
-      cout<<"Stopped\t"<<endl;
-    }
-    cout<<allJobs.at(i).command;
+    printJob(allJobs.at(i));
   }
 
 }
@@ -804,20 +856,50 @@ void fg(vector<string> input){
 }
 void runExport(vector<string> input){
   cout<<"running export"<<endl;
-  char * var = new char[input.at(0).length()];
-  for(unsigned int i=0;i<input.at(0).length();i++){
-    var[i] = input.at(0)[i];
+  for(unsigned int x=1;x<input.size();x++){
+    int pre =0;
+    int post =0;
+    bool before = true;
+    bool equals = false;
+    for(unsigned int i=0;i<input.at(x).length();i++){
+      if(input.at(x)[i] == '='){
+	before = false;
+	equals = true;
+      }
+      else if(before){
+	pre++;
+      }
+      else if(!before){
+	post++;
+      }
+    }
+
+   string preVar = "";
+   string postVar = "";
+    for(int i=0;i<pre;i++){
+      preVar+= input.at(x)[i];
+    }
+    for(int i=0;i<post;i++){
+      postVar+= input.at(x)[i+pre+1];
+    }
+   
+    int ev;
+    if(equals) ev = setenv(preVar.c_str(), postVar.c_str(),1);
+    else ev = setenv(preVar.c_str(), "?",1);
+    if(ev<0){
+      cout<<"error: "<<strerror(errno)<<endl;
+      return;
+    }
+    cout<<"export worked"<<endl;
   }
-  char * var2 = var;
-  delete var;
-  int ev = putenv(var2);
-  if(ev<0){
-    cout<<"export failed"<<endl;
-    return;
-  }
-  cout<<"export worked"<<endl;
 }
 int cd(const char *pathname) {
     int x = chdir(pathname);
     return x;
+}
+int cd(){
+  struct passwd *pw = getpwuid(getuid());
+  string home = pw->pw_dir;
+  int x = chdir(home.c_str());
+  return x;
 }
