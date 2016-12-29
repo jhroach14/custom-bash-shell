@@ -1,0 +1,3 @@
+goodbye world //
+Output kept as defualt
+Input kept as defualt
